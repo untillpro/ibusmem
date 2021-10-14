@@ -1,0 +1,34 @@
+name: Go
+on: [push, pull_request]
+jobs:
+  
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.17
+
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Cache Go - Modules
+      uses: actions/cache@v1
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: CI
+      uses: untillpro/ci-action@master
+      with:
+        organization: 'heeus'
+        token: ${{ secrets.REPOREADING_TOKEN }}
+        codecov-token: ${{ secrets.CODECOV_TOKEN }}
+  
+    - name: Linters
+      run: curl -s https://raw.githubusercontent.com/untillpro/ci-action/master/scripts/gbash.sh | bash -s "$(go env GOPATH)"
