@@ -4,8 +4,7 @@
 
 package ibusmem
 
-import (
-//	"context"
-)
+import "errors"
 
-// Err_1 Error
+var ErrTimeout = errors.New("timeout")
+var ErrSectionIsNotStarted = errors.New("section is not started")
