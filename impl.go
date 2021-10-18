@@ -19,116 +19,200 @@ type bus struct {
 
 func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	wg := sync.WaitGroup{}
-	c := make(chan interface{}, 1)
+	s := newSender(timeout)
 	wg.Add(1)
 	go func() {
-		defer close(c)
+		defer close(s.c)
 		for {
 			select {
-			case result := <-c:
+			case result := <-s.c:
 				switch result := result.(type) {
 				case ibus.Response:
 					res = result
 				case *resultSenderClosable:
 					rsender := result
-					sections = rsender.c
+					sections = rsender.sections
 					secError = rsender.err
 				}
 				wg.Done()
 				return
 			case <-time.After(timeout):
-				err = ErrTimeout
+				err = ibus.ErrTimeoutExpired
 				wg.Done()
 				return
 			}
 		}
 	}()
-	b.requestHandler(ctx, c, request)
+	b.requestHandler(ctx, s, request)
 	wg.Wait()
 	return
 }
 
 func (b *bus) SendResponse(_ context.Context, sender interface{}, response ibus.Response) {
-	sender.(chan interface{}) <- response
+	s := checkSender(sender)
+	_ = s.tryToSend(response)
 }
 
 func (b *bus) SendParallelResponse2(_ context.Context, sender interface{}) (rsender ibus.IResultSenderClosable) {
-	c := sender.(chan interface{})
-	rsender = &resultSenderClosable{c: make(chan ibus.ISection, 1)}
-	c <- rsender
-	return rsender
+	s := checkSender(sender)
+	var err error
+	rsender = &resultSenderClosable{
+		sections: make(chan ibus.ISection, 1),
+		err:      &err,
+		elements: make(chan element, 1),
+		timeout:  s.timeout,
+	}
+	if s.tryToSend(rsender) == nil {
+		return rsender
+	}
+	return nil
+}
+
+func checkSender(sender interface{}) *senderImpl {
+	s := sender.(*senderImpl)
+	if s.used {
+		panic("sender channel already used")
+	}
+	s.used = true
+	return s
+}
+
+func (s *senderImpl) tryToSend(value interface{}) (err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = e.(error)
+		}
+	}()
+	for {
+		select {
+		case s.c <- value:
+			return nil
+		case <-time.After(s.timeout):
+			return ibus.ErrNoConsumer
+		}
+	}
+}
+
+type senderImpl struct {
+	c       chan interface{}
+	used    bool
+	timeout time.Duration
+}
+
+func newSender(timeout time.Duration) *senderImpl {
+	return &senderImpl{
+		c:       make(chan interface{}, 1),
+		used:    false,
+		timeout: timeout,
+	}
 }
 
 type resultSenderClosable struct {
-	c     chan ibus.ISection
-	elems chan elem
-	err   *error
+	sections    chan ibus.ISection
+	elements    chan element
+	err         *error
+	timeout     time.Duration
+	internalErr error
 }
 
 func (s *resultSenderClosable) StartArraySection(sectionType string, path []string) {
-	s.c <- arraySection{
+	s.tryToSendSection(arraySection{
 		sectionType: sectionType,
 		path:        path,
 		elems:       s.updateElemsChannel(),
-	}
+	})
 }
 
 func (s *resultSenderClosable) StartMapSection(sectionType string, path []string) {
-	s.c <- mapSection{
+	s.tryToSendSection(mapSection{
 		sectionType: sectionType,
 		path:        path,
 		elems:       s.updateElemsChannel(),
-	}
+	})
 }
 
 func (s *resultSenderClosable) ObjectSection(sectionType string, path []string, element interface{}) (err error) {
-	s.c <- objectSection{
+	s.tryToSendSection(objectSection{
 		sectionType: sectionType,
 		path:        path,
-		elems:       s.updateElemsChannel(),
-	}
+		elements:    s.updateElemsChannel(),
+	})
 	return s.SendElement("", element)
 }
 
-func (s resultSenderClosable) SendElement(name string, element interface{}) (err error) {
-	if element == nil {
+func (s resultSenderClosable) SendElement(name string, el interface{}) (err error) {
+	if s.internalErr != nil {
+		return s.internalErr
+	}
+	if el == nil {
 		return nil
 	}
-	if s.elems == nil {
-		return ErrSectionIsNotStarted
+	if s.elements == nil {
+		panic("section is not started")
 	}
-	bb, ok := element.([]byte)
+	bb, ok := el.([]byte)
 	if !ok {
-		if bb, err = json.Marshal(element); err != nil {
+		if bb, err = json.Marshal(el); err != nil {
 			return
 		}
 	}
-	s.elems <- elem{
+	element := element{
 		name:  name,
 		value: bb,
 	}
-	return
+	return s.tryToSendElement(element)
 }
 
 func (s *resultSenderClosable) Close(err error) {
-	close(s.c)
+	close(s.sections)
+	close(s.elements)
 	if err != nil {
-		s.err = &err
+		*s.err = err
 	}
 }
 
-func (s *resultSenderClosable) updateElemsChannel() chan elem {
-	if s.elems != nil {
-		close(s.elems)
+func (s *resultSenderClosable) updateElemsChannel() chan element {
+	close(s.elements)
+	s.elements = make(chan element, 1)
+	return s.elements
+}
+
+func (s *resultSenderClosable) tryToSendSection(value ibus.ISection) {
+	defer func() {
+		if e := recover(); e != nil {
+			s.internalErr = e.(error)
+		}
+	}()
+	for {
+		select {
+		case s.sections <- value:
+			return
+		case <-time.After(s.timeout):
+			s.internalErr = ibus.ErrNoConsumer
+		}
 	}
-	s.elems = make(chan elem, 1)
-	return s.elems
+}
+
+func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = e.(error)
+		}
+	}()
+	for {
+		select {
+		case s.elements <- value:
+			return nil
+		case <-time.After(s.timeout):
+			return ibus.ErrNoConsumer
+		}
+	}
 }
 
 type arraySection struct {
 	sectionType string
 	path        []string
-	elems       chan elem
+	elems       chan element
 }
 
 func (s arraySection) Type() string {
@@ -149,7 +233,7 @@ func (s arraySection) Next() (value []byte, ok bool) {
 type mapSection struct {
 	sectionType string
 	path        []string
-	elems       chan elem
+	elems       chan element
 }
 
 func (s mapSection) Type() string {
@@ -170,7 +254,8 @@ func (s mapSection) Next() (name string, value []byte, ok bool) {
 type objectSection struct {
 	sectionType string
 	path        []string
-	elems       chan elem
+	elements    chan element
+	element     *element
 }
 
 func (s objectSection) Type() string {
@@ -181,12 +266,15 @@ func (s objectSection) Path() []string {
 	return s.path
 }
 
-func (s objectSection) Value() []byte {
-	e := <-s.elems
-	return e.value
+func (s *objectSection) Value() []byte {
+	if s.element == nil {
+		e := <-s.elements
+		s.element = &e
+	}
+	return s.element.value
 }
 
-type elem struct {
+type element struct {
 	name  string
 	value []byte
 }

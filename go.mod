@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/stretchr/testify v1.7.0
-	github.com/untillpro/airs-ibus v0.0.0-20211014152649-e2b0df1b2bbd
+	github.com/untillpro/airs-ibus v0.0.0-20211018104549-2abc028141d9
 )
 
 require (
