@@ -17,8 +17,8 @@ import (
 // BenchmarkSectionedRequestResponse/#00-8         	   43231	     27062 ns/op	     36952 rps
 
 func BenchmarkSectionedRequestResponse(b *testing.B) {
-	bus := bus{}
-	requestHandler := func(ctx context.Context, sender interface{}, request ibus.Request) {
+	var bus ibus.IBus
+	bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
 		rs := bus.SendParallelResponse2(ctx, sender)
 		go func() {
 			require.Nil(b, rs.ObjectSection("secObj", []string{"meta"}, "elem"))
@@ -33,8 +33,7 @@ func BenchmarkSectionedRequestResponse(b *testing.B) {
 			require.Nil(b, rs.SendElement("id4", "elem"))
 			rs.Close(errors.New("test error"))
 		}()
-	}
-	bus.requestHandler = requestHandler
+	})
 
 	b.Run("", func(b *testing.B) {
 		start := time.Now()
