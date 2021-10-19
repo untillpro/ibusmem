@@ -5,9 +5,14 @@
 package ibusmem
 
 import (
-//	"context"
+	"context"
+
+	ibus "github.com/untillpro/airs-ibus"
 )
 
-// Provide s.e.
-//func Provide() (myinterface , cleanup func(), err error) {
-//}
+func Provide(requestHandler func(ctx context.Context, sender interface{}, request ibus.Request)) ibus.IBus {
+	if requestHandler == nil {
+		panic("request handler must be not nil")
+	}
+	return &bus{requestHandler}
+}
