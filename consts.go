@@ -7,4 +7,3 @@ package ibusmem
 const (
 //	const1 = 0
 )
-
