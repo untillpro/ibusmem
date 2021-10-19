@@ -47,12 +47,12 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 }
 
 func (b *bus) SendResponse(_ context.Context, sender interface{}, response ibus.Response) {
-	s := checkSender(sender)
-	s.c <- response
+	s := sender.(*channelSender)
+	s.send(response)
 }
 
 func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rsender ibus.IResultSenderClosable) {
-	s := checkSender(sender)
+	s := sender.(*channelSender)
 	var err error
 	rsender = &resultSenderClosable{
 		sections: make(chan ibus.ISection, 1),
@@ -60,31 +60,31 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 		timeout:  s.timeout,
 		ctx:      ctx,
 	}
-	s.c <- rsender
+	s.send(rsender)
 	return rsender
 }
 
-func checkSender(sender interface{}) *senderImpl {
-	s := sender.(*senderImpl)
-	if s.used {
-		panic("sender channel already used")
-	}
-	s.used = true
-	return s
-}
-
-type senderImpl struct {
+type channelSender struct {
 	c       chan interface{}
 	used    bool
 	timeout time.Duration
 }
 
-func newSender(timeout time.Duration) *senderImpl {
-	return &senderImpl{
+func newSender(timeout time.Duration) *channelSender {
+	return &channelSender{
 		c:       make(chan interface{}, 1),
 		used:    false,
 		timeout: timeout,
 	}
+}
+
+func (s *channelSender) send(value interface{}) {
+	if s.used {
+		panic("sender channel already used")
+	}
+	s.used = true
+	s.c <- value
+	close(s.c)
 }
 
 type resultSenderClosable struct {
@@ -121,7 +121,7 @@ func (s *resultSenderClosable) ObjectSection(sectionType string, path []string, 
 	return s.SendElement("", element)
 }
 
-func (s resultSenderClosable) SendElement(name string, el interface{}) (err error) {
+func (s *resultSenderClosable) SendElement(name string, el interface{}) (err error) {
 	if s.internalErr != nil {
 		return s.internalErr
 	}
@@ -145,11 +145,11 @@ func (s resultSenderClosable) SendElement(name string, el interface{}) (err erro
 }
 
 func (s *resultSenderClosable) Close(err error) {
-	close(s.sections)
-	close(s.elements)
 	if err != nil {
 		*s.err = err
 	}
+	close(s.sections)
+	close(s.elements)
 }
 
 func (s *resultSenderClosable) updateElemsChannel() chan element {
@@ -226,10 +226,10 @@ func (s mapSection) Next() (name string, value []byte, ok bool) {
 }
 
 type objectSection struct {
-	sectionType string
-	path        []string
-	elements    chan element
-	element     *element
+	sectionType     string
+	path            []string
+	elements        chan element
+	elementReceived bool
 }
 
 func (s objectSection) Type() string {
@@ -241,11 +241,12 @@ func (s objectSection) Path() []string {
 }
 
 func (s *objectSection) Value() []byte {
-	if s.element == nil {
-		e := <-s.elements
-		s.element = &e
+	if !s.elementReceived {
+		s.elementReceived = true
+		element := <-s.elements
+		return element.value
 	}
-	return s.element.value
+	return nil
 }
 
 type element struct {
