@@ -7,6 +7,7 @@ package ibusmem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
@@ -18,6 +19,16 @@ type bus struct {
 }
 
 func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			switch recoveryResult := e.(type) {
+			case string:
+				err = errors.New(recoveryResult)
+			case error:
+				err = recoveryResult
+			}
+		}
+	}()
 	wg := sync.WaitGroup{}
 	s := newSender(timeout)
 	wg.Add(1)
@@ -35,6 +46,7 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 			}
 			return
 		case <-ctx.Done():
+			err = ctx.Err()
 			return
 		case <-time.After(timeout):
 			err = ibus.ErrTimeoutExpired
@@ -66,58 +78,53 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 
 type channelSender struct {
 	c       chan interface{}
-	used    bool
 	timeout time.Duration
 }
 
 func newSender(timeout time.Duration) *channelSender {
 	return &channelSender{
 		c:       make(chan interface{}, 1),
-		used:    false,
 		timeout: timeout,
 	}
 }
 
 func (s *channelSender) send(value interface{}) {
-	if s.used {
-		panic("sender channel already used")
-	}
-	s.used = true
 	s.c <- value
 	close(s.c)
 }
 
 type resultSenderClosable struct {
-	sections    chan ibus.ISection
-	elements    chan element
-	err         *error
-	timeout     time.Duration
-	internalErr error
-	ctx         context.Context
+	currentSection ibus.ISection
+	sections       chan ibus.ISection
+	elements       chan element
+	err            *error
+	timeout        time.Duration
+	internalErr    error
+	ctx            context.Context
 }
 
 func (s *resultSenderClosable) StartArraySection(sectionType string, path []string) {
-	s.tryToSendSection(arraySection{
+	s.currentSection = arraySection{
 		sectionType: sectionType,
 		path:        path,
 		elems:       s.updateElemsChannel(),
-	})
+	}
 }
 
 func (s *resultSenderClosable) StartMapSection(sectionType string, path []string) {
-	s.tryToSendSection(mapSection{
+	s.currentSection = mapSection{
 		sectionType: sectionType,
 		path:        path,
 		elems:       s.updateElemsChannel(),
-	})
+	}
 }
 
 func (s *resultSenderClosable) ObjectSection(sectionType string, path []string, element interface{}) (err error) {
-	s.tryToSendSection(objectSection{
+	s.currentSection = &objectSection{
 		sectionType: sectionType,
 		path:        path,
 		elements:    s.updateElemsChannel(),
-	})
+	}
 	return s.SendElement("", element)
 }
 
@@ -137,6 +144,10 @@ func (s *resultSenderClosable) SendElement(name string, el interface{}) (err err
 			return
 		}
 	}
+	s.tryToSendSection(s.currentSection)
+	if s.internalErr != nil {
+		return s.internalErr
+	}
 	element := element{
 		name:  name,
 		value: bb,
@@ -149,7 +160,9 @@ func (s *resultSenderClosable) Close(err error) {
 		*s.err = err
 	}
 	close(s.sections)
-	close(s.elements)
+	if s.elements != nil {
+		close(s.elements)
+	}
 }
 
 func (s *resultSenderClosable) updateElemsChannel() chan element {
@@ -161,12 +174,15 @@ func (s *resultSenderClosable) updateElemsChannel() chan element {
 }
 
 func (s *resultSenderClosable) tryToSendSection(value ibus.ISection) {
-	select {
-	case s.sections <- value:
-	case <-s.ctx.Done():
-		s.internalErr = s.ctx.Err()
-	case <-time.After(s.timeout):
-		s.internalErr = ibus.ErrNoConsumer
+	if s.currentSection != nil {
+		select {
+		case s.sections <- value:
+			s.currentSection = nil
+		case <-s.ctx.Done():
+			s.internalErr = s.ctx.Err()
+		case <-time.After(s.timeout):
+			s.internalErr = ibus.ErrNoConsumer
+		}
 	}
 }
 
@@ -232,11 +248,11 @@ type objectSection struct {
 	elementReceived bool
 }
 
-func (s objectSection) Type() string {
+func (s *objectSection) Type() string {
 	return s.sectionType
 }
 
-func (s objectSection) Path() []string {
+func (s *objectSection) Path() []string {
 	return s.path
 }
 
