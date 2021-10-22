@@ -160,6 +160,7 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 		select {
 		case s.sections <- s.currentSection:
 			s.currentSection = nil
+			return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.sections<- success)
 		case <-s.ctx.Done():
 			return s.ctx.Err()
 		case <-time.After(s.timeout):
@@ -172,7 +173,7 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 	select {
 	case s.elements <- value:
-		return nil
+		return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.elemets<- success)
 	case <-s.ctx.Done():
 		return s.ctx.Err()
 	case <-time.After(s.timeout):

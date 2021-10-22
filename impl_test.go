@@ -233,11 +233,13 @@ func TestResultSenderClosable_StartArraySection(t *testing.T) {
 	})
 	t.Run("Should return error when ctx done on send section", func(t *testing.T) {
 		var bus ibus.IBus
+		ch := make(chan interface{})
 		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
 			rs := bus.SendParallelResponse2(ctx, sender)
 			go func() {
+				<-ch // wait for cancel
 				err := rs.ObjectSection("", nil, 42)
-
+				ch <- nil // signal ok to start read sections. That forces ctx.Done case fire at tryToSendSection
 				require.Equal("context canceled", err.Error())
 				rs.Close(nil)
 			}()
@@ -248,8 +250,11 @@ func TestResultSenderClosable_StartArraySection(t *testing.T) {
 		require.Empty(response)
 		require.NotNil(sections)
 		cancel()
-		_, ok := <-sections
-		require.False(ok)
+		ch <- nil // signal cancelled
+		<-ch      // delay to read sections to make ctx.Done() branch at tryToSendSection fire.
+		// note: section could be sent on ctx.Done() because cases order is undefined at tryToSendSection. But ObjectSection() will return error in any case
+		for range sections {
+		}
 		require.Nil(*secErr)
 	})
 }
@@ -410,12 +415,15 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 	})
 	t.Run("Should return error when ctx done on send element", func(t *testing.T) {
 		var bus ibus.IBus
+		ch := make(chan interface{})
 		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
 			rs := bus.SendParallelResponse2(ctx, sender)
 			go func() {
 				rs.StartArraySection("", nil)
-				_ = rs.SendElement("", 0)
+				require.Nil(rs.SendElement("", 0))
+				<-ch // wait for cancel
 				err := rs.SendElement("", 1)
+				ch <- nil // signal ok to read next element. That forces ctx.Done() case fire at tryToSendElement
 
 				require.Equal("context canceled", err.Error())
 				rs.Close(nil)
@@ -430,6 +438,9 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		require.True(ok)
 		require.Equal([]byte("0"), val)
 		cancel()
+		ch <- nil           // signal cancelled
+		<-ch                // wait for ok to read next element to force ctx.Done case fire at tryToSendElement
+		_, _ = array.Next() // note: element could be sent on ctx.Done() because cases order is undefined at tryToSendElement. But SendElement() will return error in any case
 		_, ok = <-sections
 		require.False(ok)
 		require.Nil(*secErr)
