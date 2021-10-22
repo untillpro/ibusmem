@@ -6,6 +6,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - name: Check copyright
-      run: sh ./.github/scripts/check_copyright.sh 
-      shell: bash 
+    - name: Copyright
+      run: curl -s https://raw.githubusercontent.com/untillpro/ci-action/master/scripts/check_copyright.sh | bash -s "$(go env GOPATH)"
+
