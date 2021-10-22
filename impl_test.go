@@ -89,15 +89,18 @@ func TestBasicUsage_Bus(t *testing.T) {
 	})
 }
 
+const testTimeout = 100 * time.Millisecond
+const doubledTestTimeout = 2 * testTimeout
+
 func TestBus_SendRequest2(t *testing.T) {
 	t.Run("Should return timeout error", func(t *testing.T) {
 		var bus ibus.IBus
 		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(doubledTestTimeout)
 			bus.SendResponse(ctx, sender, ibus.Response{Data: []byte("data")})
 		})
 
-		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, 10*time.Millisecond)
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, testTimeout)
 
 		require.Equal(t, ibus.ErrTimeoutExpired, err)
 		require.Empty(t, response)
@@ -107,13 +110,13 @@ func TestBus_SendRequest2(t *testing.T) {
 	t.Run("Should return error on ctx done", func(t *testing.T) {
 		var bus ibus.IBus
 		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(doubledTestTimeout)
 			bus.SendResponse(ctx, sender, ibus.Response{Data: []byte("data")})
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		response, sections, secErr, err := bus.SendRequest2(ctx, ibus.Request{}, 5*time.Millisecond)
+		response, sections, secErr, err := bus.SendRequest2(ctx, ibus.Request{}, testTimeout)
 
 		require.Equal(t, "context canceled", err.Error())
 		require.Empty(t, response)
@@ -162,7 +165,7 @@ func TestBus_SendParallelResponse2(t *testing.T) {
 		bus = Provide(func(ctx context.Context, _ interface{}, request ibus.Request) {
 			require.Panics(t, func() { _ = bus.SendParallelResponse2(ctx, "wrong sender") })
 		})
-		_, _, _, _ = bus.SendRequest2(context.Background(), ibus.Request{}, 5*time.Millisecond)
+		_, _, _, _ = bus.SendRequest2(context.Background(), ibus.Request{}, testTimeout)
 	})
 }
 
@@ -181,105 +184,140 @@ func TestBus_SendResponse(t *testing.T) {
 		bus = Provide(func(ctx context.Context, _ interface{}, request ibus.Request) {
 			require.Panics(t, func() { bus.SendResponse(ctx, "wrong sender", ibus.Response{}) })
 		})
-		_, _, _, _ = bus.SendRequest2(context.Background(), ibus.Request{}, 5*time.Millisecond)
+		_, _, _, _ = bus.SendRequest2(context.Background(), ibus.Request{}, testTimeout)
+	})
+}
+
+func TestResultSenderClosable_StartArraySection(t *testing.T) {
+	t.Run("Should return error when client reads section too long", func(t *testing.T) {
+		ch := make(chan interface{})
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				err := rs.ObjectSection("", nil, 42)
+
+				require.ErrorIs(t, err, ibus.ErrNoConsumer)
+				ch <- nil
+			}()
+		})
+		_, _, _, _ = bus.SendRequest2(context.Background(), ibus.Request{}, testTimeout)
+		<-ch
+	})
+	t.Run("Should return error when ctx done on send section", func(t *testing.T) {
+		ch := make(chan interface{})
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				err := rs.ObjectSection("", nil, 42)
+
+				require.Equal(t, "context canceled", err.Error())
+				ch <- nil
+			}()
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		response, sections, secErr, err := bus.SendRequest2(ctx, ibus.Request{}, ibus.DefaultTimeout)
+		cancel()
+
+		require.Nil(t, err)
+		require.Empty(t, response)
+		require.NotNil(t, sections)
+		require.Nil(t, *secErr)
+		<-ch
 	})
 }
 
 func TestResultSenderClosable_SendElement(t *testing.T) {
-	t.Run("Should return error when internal error is not nil", func(t *testing.T) {
-		rs := resultSenderClosable{
-			elements:    make(chan element),
-			internalErr: ibus.ErrNoConsumer,
-		}
-
-		err := rs.SendElement("", 42)
-
-		require.ErrorIs(t, err, ibus.ErrNoConsumer)
-	})
 	t.Run("Should not send to bus when element is nil", func(t *testing.T) {
-		rs := resultSenderClosable{
-			elements: make(chan element, 1),
-			ctx:      context.Background(),
-		}
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				require.Nil(t, rs.ObjectSection("", nil, nil))
+				rs.Close(nil)
+			}()
+		})
 
-		err := rs.SendElement("", nil)
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
 
 		require.Nil(t, err)
-		require.Empty(t, rs.elements)
+		require.Empty(t, response)
+		require.Nil(t, <-sections)
+		require.Nil(t, *secErr)
 	})
 	t.Run("Should panic when section is not started", func(t *testing.T) {
-		rs := resultSenderClosable{}
-
-		require.PanicsWithValue(t, "section is not started", func() {
-			_ = rs.SendElement("", []byte("hello world"))
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				require.PanicsWithValue(t, "section is not started", func() {
+					_ = rs.SendElement("", []byte("hello world"))
+				})
+				rs.Close(nil)
+			}()
 		})
+		_, sections, _, _ := bus.SendRequest2(context.Background(), ibus.Request{}, testTimeout)
+		<-sections
 	})
 	t.Run("Should return error when element is invalid", func(t *testing.T) {
-		rs := resultSenderClosable{elements: make(chan element, 1)}
-
-		err := rs.SendElement("", func() {})
-
-		require.NotNil(t, err)
-	})
-	t.Run("Should return error when client reads too long", func(t *testing.T) {
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection, 1),
-			timeout:  time.Millisecond,
-			ctx:      context.Background(),
-		}
-		rs.StartArraySection("", nil)
-		require.Nil(t, rs.SendElement("", element{}))
-
-		err := rs.SendElement("", element{})
-
-		require.ErrorIs(t, err, ibus.ErrNoConsumer)
-		require.ErrorIs(t, rs.internalErr, ibus.ErrNoConsumer)
-	})
-	t.Run("Should return error when ctx done", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection, 1),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      ctx,
-		}
-		rs.StartArraySection("", nil)
-		cancel()
-
-		_ = rs.SendElement("", element{})
-		err := rs.SendElement("", element{})
-
-		require.Equal(t, "context canceled", err.Error())
-		require.Equal(t, "context canceled", rs.internalErr.Error())
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				require.NotNil(t, rs.ObjectSection("", nil, func() {}))
+				rs.Close(nil)
+			}()
+		})
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+		require.Nil(t, err)
+		require.Empty(t, response)
+		require.Nil(t, <-sections)
+		require.Nil(t, *secErr)
 	})
 	t.Run("Should panic after close", func(t *testing.T) {
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection, 1),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      context.Background(),
-		}
-		rs.StartArraySection("", nil)
-		rs.Close(nil)
+		ch := make(chan interface{})
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				require.Nil(t, rs.ObjectSection("", nil, 42))
+				rs.Close(nil)
 
-		require.PanicsWithError(t, "send on closed channel", func() {
-			_ = rs.SendElement("", []byte("hello world"))
+				require.Panics(t, func() {
+					_ = rs.ObjectSection("", nil, []byte("hello world"))
+				})
+				ch <- nil
+			}()
 		})
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+		require.Nil(t, err)
+		require.Empty(t, response)
+		require.NotNil(t, (<-sections).(ibus.IObjectSection).Value())
+		require.Nil(t, *secErr)
+		<-ch
 	})
 	t.Run("Should accept object", func(t *testing.T) {
 		type article struct {
 			ID   int64  `json:"id"`
 			Name string `json:"name"`
 		}
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection, 1),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      context.Background(),
-		}
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				require.Nil(t, rs.ObjectSection("", nil, article{ID: 100, Name: "Cola"}))
+				rs.Close(nil)
+			}()
+		})
 		a := article{}
 
-		require.Nil(t, rs.ObjectSection("", nil, article{ID: 100, Name: "Cola"}))
-		rs.Close(nil)
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
 
-		require.Nil(t, json.Unmarshal((<-rs.sections).(ibus.IObjectSection).Value(), &a))
+		require.Nil(t, err)
+		require.Empty(t, response)
+		require.Nil(t, *secErr)
+		require.Nil(t, json.Unmarshal((<-sections).(ibus.IObjectSection).Value(), &a))
 		require.Equal(t, int64(100), a.ID)
 		require.Equal(t, "Cola", a.Name)
 	})
@@ -288,85 +326,91 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 			X int64 `json:"x"`
 			Y int64 `json:"y"`
 		}
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection, 1),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      context.Background(),
-		}
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				require.Nil(t, rs.ObjectSection("", nil, []byte(`{"x":52,"y":89}`)))
+				rs.Close(nil)
+			}()
+		})
 		p := point{}
 
-		require.Nil(t, rs.ObjectSection("", nil, []byte(`{"x":52,"y":89}`)))
-		rs.Close(nil)
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
 
-		require.Nil(t, json.Unmarshal((<-rs.sections).(ibus.IObjectSection).Value(), &p))
+		require.Nil(t, err)
+		require.Empty(t, response)
+		require.Nil(t, *secErr)
+		require.Nil(t, json.Unmarshal((<-sections).(ibus.IObjectSection).Value(), &p))
 		require.Equal(t, int64(52), p.X)
 		require.Equal(t, int64(89), p.Y)
 	})
-	t.Run("Should return error when client reads section too long", func(t *testing.T) {
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection),
-			timeout:  time.Millisecond,
-			ctx:      context.Background(),
-		}
+	t.Run("Should return error when client reads element too long", func(t *testing.T) {
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				rs.StartArraySection("", nil)
+				_ = rs.SendElement("", 0)
+				err := rs.SendElement("", 1)
 
-		rs.StartArraySection("", nil)
-		err := rs.SendElement("", 42)
-
-		require.ErrorIs(t, err, ibus.ErrNoConsumer)
-		require.ErrorIs(t, rs.internalErr, ibus.ErrNoConsumer)
-	})
-	t.Run("Should return error when ctx done on send section", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      ctx,
-		}
-		cancel()
-
-		rs.StartArraySection("", nil)
-		err := rs.SendElement("", 42)
-
-		require.Equal(t, "context canceled", rs.internalErr.Error())
-		require.Equal(t, "context canceled", err.Error())
-	})
-}
-
-func TestResultSenderClosable_StartArraySection(t *testing.T) {
-	t.Run("Should be ok", func(t *testing.T) {
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection, 1),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      context.Background(),
-		}
-
-		rs.StartArraySection("", nil)
-
-		require.Nil(t, rs.internalErr)
-	})
-	t.Run("Should panic after close", func(t *testing.T) {
-		rs := resultSenderClosable{
-			sections: make(chan ibus.ISection),
-			timeout:  ibus.DefaultTimeout,
-			ctx:      context.Background(),
-		}
-
-		rs.Close(nil)
-
-		require.PanicsWithError(t, "send on closed channel", func() {
-			rs.StartArraySection("", nil)
-			_ = rs.SendElement("", 42)
+				require.ErrorIs(t, err, ibus.ErrNoConsumer)
+				rs.Close(nil)
+			}()
 		})
+
+		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, testTimeout)
+
+		require.Nil(t, err)
+		require.Empty(t, response)
+		array := (<-sections).(ibus.IArraySection)
+		_, _ = array.Next()
+		<-sections
+		require.Nil(t, *secErr)
+	})
+	t.Run("Should return error when ctx done on send element", func(t *testing.T) {
+		ch := make(chan interface{})
+		var bus ibus.IBus
+		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(ctx, sender)
+			go func() {
+				rs.StartArraySection("", nil)
+				_ = rs.SendElement("", 0)
+				<-ch
+				err := rs.SendElement("", 1)
+
+				require.Equal(t, "context canceled", err.Error())
+				rs.Close(nil)
+			}()
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		response, sections, secErr, err := bus.SendRequest2(ctx, ibus.Request{}, ibus.DefaultTimeout)
+		require.Nil(t, err)
+		require.Empty(t, response)
+		array := (<-sections).(ibus.IArraySection)
+		_, _ = array.Next()
+		cancel()
+		ch <- nil
+		require.Nil(t, *secErr)
 	})
 }
 
 func TestObjectSection_Value(t *testing.T) {
-	section := objectSection{
-		elements:        make(chan element, 1),
-		elementReceived: false,
-	}
-	section.elements <- element{value: []byte("bb")}
+	var bus ibus.IBus
+	bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		rs := bus.SendParallelResponse2(ctx, sender)
+		go func() {
+			require.Nil(t, rs.ObjectSection("", nil, []byte("bb")))
+			rs.Close(nil)
+		}()
+	})
 
-	require.Equal(t, []byte("bb"), section.Value())
-	require.Nil(t, section.Value())
+	response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+
+	object := (<-sections).(ibus.IObjectSection)
+	require.Nil(t, err)
+	require.Empty(t, response)
+	require.Equal(t, []byte("bb"), object.Value())
+	require.Nil(t, object.Value())
+	require.Nil(t, *secErr)
 }

@@ -55,7 +55,11 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 	}()
 	b.requestHandler(ctx, s, request)
 	wg.Wait()
-	return
+	//Check ctx here again for case when ctx.Done and value received simultaneously
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return res, sections, secError, err
 }
 
 func (b *bus) SendResponse(_ context.Context, sender interface{}, response ibus.Response) {
@@ -67,7 +71,7 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 	s := sender.(*channelSender)
 	var err error
 	rsender = &resultSenderClosable{
-		sections: make(chan ibus.ISection, 1),
+		sections: make(chan ibus.ISection),
 		err:      &err,
 		timeout:  s.timeout,
 		ctx:      ctx,
@@ -99,7 +103,6 @@ type resultSenderClosable struct {
 	elements       chan element
 	err            *error
 	timeout        time.Duration
-	internalErr    error
 	ctx            context.Context
 }
 
@@ -129,9 +132,6 @@ func (s *resultSenderClosable) ObjectSection(sectionType string, path []string, 
 }
 
 func (s *resultSenderClosable) SendElement(name string, el interface{}) (err error) {
-	if s.internalErr != nil {
-		return s.internalErr
-	}
 	if el == nil {
 		return nil
 	}
@@ -144,9 +144,9 @@ func (s *resultSenderClosable) SendElement(name string, el interface{}) (err err
 			return
 		}
 	}
-	s.tryToSendSection(s.currentSection)
-	if s.internalErr != nil {
-		return s.internalErr
+	err = s.tryToSendSection()
+	if err != nil {
+		return
 	}
 	element := element{
 		name:  name,
@@ -169,21 +169,22 @@ func (s *resultSenderClosable) updateElemsChannel() chan element {
 	if s.elements != nil {
 		close(s.elements)
 	}
-	s.elements = make(chan element, 1)
+	s.elements = make(chan element)
 	return s.elements
 }
 
-func (s *resultSenderClosable) tryToSendSection(value ibus.ISection) {
+func (s *resultSenderClosable) tryToSendSection() (err error) {
 	if s.currentSection != nil {
 		select {
-		case s.sections <- value:
+		case s.sections <- s.currentSection:
 			s.currentSection = nil
 		case <-s.ctx.Done():
-			s.internalErr = s.ctx.Err()
+			return s.ctx.Err()
 		case <-time.After(s.timeout):
-			s.internalErr = ibus.ErrNoConsumer
+			return ibus.ErrNoConsumer
 		}
 	}
+	return nil
 }
 
 func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
@@ -191,11 +192,9 @@ func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 	case s.elements <- value:
 		return nil
 	case <-s.ctx.Done():
-		s.internalErr = s.ctx.Err()
-		return s.internalErr
+		return s.ctx.Err()
 	case <-time.After(s.timeout):
-		s.internalErr = ibus.ErrNoConsumer
-		return s.internalErr
+		return ibus.ErrNoConsumer
 	}
 }
 
