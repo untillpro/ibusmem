@@ -14,7 +14,7 @@ import (
 	ibus "github.com/untillpro/airs-ibus"
 )
 
-// BenchmarkSectionedRequestResponse/#00-8         	   43231	     27062 ns/op	     36952 rps
+// BenchmarkSectionedRequestResponse/#00-4    51944	     23527 ns/op	     42505 rps	    4229 B/op	      69 allocs/op
 
 func BenchmarkSectionedRequestResponse(b *testing.B) {
 	var bus ibus.IBus

@@ -14,10 +14,6 @@ import (
 	ibus "github.com/untillpro/airs-ibus"
 )
 
-type bus struct {
-	requestHandler func(ctx context.Context, sender interface{}, request ibus.Request)
-}
-
 func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	defer func() {
 		if e := recover(); e != nil {
@@ -80,11 +76,6 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 	return rsender
 }
 
-type channelSender struct {
-	c       chan interface{}
-	timeout time.Duration
-}
-
 func newSender(timeout time.Duration) *channelSender {
 	return &channelSender{
 		c:       make(chan interface{}, 1),
@@ -95,15 +86,6 @@ func newSender(timeout time.Duration) *channelSender {
 func (s *channelSender) send(value interface{}) {
 	s.c <- value
 	close(s.c)
-}
-
-type resultSenderClosable struct {
-	currentSection ibus.ISection
-	sections       chan ibus.ISection
-	elements       chan element
-	err            *error
-	timeout        time.Duration
-	ctx            context.Context
 }
 
 func (s *resultSenderClosable) StartArraySection(sectionType string, path []string) {
@@ -198,12 +180,6 @@ func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 	}
 }
 
-type arraySection struct {
-	sectionType string
-	path        []string
-	elems       chan element
-}
-
 func (s arraySection) Type() string {
 	return s.sectionType
 }
@@ -217,12 +193,6 @@ func (s arraySection) Next() (value []byte, ok bool) {
 		return e.value, true
 	}
 	return nil, false
-}
-
-type mapSection struct {
-	sectionType string
-	path        []string
-	elems       chan element
 }
 
 func (s mapSection) Type() string {
@@ -240,13 +210,6 @@ func (s mapSection) Next() (name string, value []byte, ok bool) {
 	return "", nil, false
 }
 
-type objectSection struct {
-	sectionType     string
-	path            []string
-	elements        chan element
-	elementReceived bool
-}
-
 func (s *objectSection) Type() string {
 	return s.sectionType
 }
@@ -262,9 +225,4 @@ func (s *objectSection) Value() []byte {
 		return element.value
 	}
 	return nil
-}
-
-type element struct {
-	name  string
-	value []byte
 }
