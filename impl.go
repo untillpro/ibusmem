@@ -14,6 +14,8 @@ import (
 	ibus "github.com/untillpro/airs-ibus"
 )
 
+// если одновременно ctx.Done() и SendParallelResponse, то возвращаем канал секций + err = ctx.Err()
+// канал секций в этом случае никто не читает (по контракту IBus), поэтому точно сработает ветка ctx.Done в trySendSection()
 func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	defer func() {
 		if e := recover(); e != nil {
@@ -40,6 +42,7 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 				sections = rsender.sections
 				secError = rsender.err
 			}
+			err = ctx.Err() // to make ctx.Done() have priority
 			return
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -51,10 +54,6 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 	}()
 	b.requestHandler(ctx, s, request)
 	wg.Wait()
-	//Check ctx here again for case when ctx.Done and value received simultaneously
-	if ctx.Err() != nil {
-		err = ctx.Err()
-	}
 	return res, sections, secError, err
 }
 
@@ -138,9 +137,7 @@ func (s *resultSenderClosable) SendElement(name string, el interface{}) (err err
 }
 
 func (s *resultSenderClosable) Close(err error) {
-	if err != nil {
-		*s.err = err
-	}
+	*s.err = err
 	close(s.sections)
 	if s.elements != nil {
 		close(s.elements)
