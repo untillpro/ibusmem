@@ -18,13 +18,12 @@ import (
 // канал секций в этом случае никто не читает (по контракту IBus), поэтому точно сработает ветка ctx.Done в trySendSection()
 func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	defer func() {
-		if e := recover(); e != nil {
-			switch recoveryResult := e.(type) {
-			case string:
-				err = errors.New(recoveryResult)
-			case error:
-				err = recoveryResult
-			}
+		switch r := recover().(type) {
+		case nil:
+		case string:
+			err = errors.New(r)
+		case error:
+			err = r
 		}
 	}()
 	wg := sync.WaitGroup{}
@@ -47,7 +46,7 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 		case <-ctx.Done():
 			err = ctx.Err()
 			return
-		case <-time.After(timeout):
+		case <-b.timerResponse(timeout):
 			err = ibus.ErrTimeoutExpired
 			return
 		}
@@ -66,10 +65,12 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 	s := sender.(*channelSender)
 	var err error
 	rsender = &resultSenderClosable{
-		sections: make(chan ibus.ISection),
-		err:      &err,
-		timeout:  s.timeout,
-		ctx:      ctx,
+		sections:     make(chan ibus.ISection),
+		err:          &err,
+		timeout:      s.timeout,
+		ctx:          ctx,
+		timerSection: b.timerSection,
+		timerElement: b.timerElement,
 	}
 	s.send(rsender)
 	return rsender
@@ -160,7 +161,7 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 			return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.sections<- success)
 		case <-s.ctx.Done():
 			return s.ctx.Err()
-		case <-time.After(s.timeout):
+		case <-s.timerSection(s.timeout):
 			return ibus.ErrNoConsumer
 		}
 	}
@@ -173,7 +174,7 @@ func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 		return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.elemets<- success)
 	case <-s.ctx.Done():
 		return s.ctx.Err()
-	case <-time.After(s.timeout):
+	case <-s.timerElement(s.timeout):
 		return ibus.ErrNoConsumer
 	}
 }

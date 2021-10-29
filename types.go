@@ -13,6 +13,9 @@ import (
 
 type bus struct {
 	requestHandler func(ctx context.Context, sender interface{}, request ibus.Request)
+	timerResponse  func(d time.Duration) <-chan time.Time
+	timerSection   func(d time.Duration) <-chan time.Time
+	timerElement   func(d time.Duration) <-chan time.Time
 }
 
 type channelSender struct {
@@ -27,6 +30,8 @@ type resultSenderClosable struct {
 	err            *error
 	timeout        time.Duration
 	ctx            context.Context
+	timerSection   func(d time.Duration) <-chan time.Time
+	timerElement   func(d time.Duration) <-chan time.Time
 }
 
 type arraySection struct {
