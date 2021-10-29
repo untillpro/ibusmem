@@ -19,7 +19,6 @@ import (
 func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	defer func() {
 		switch r := recover().(type) {
-		case nil:
 		case string:
 			err = errors.New(r)
 		case error:
@@ -27,7 +26,10 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 		}
 	}()
 	wg := sync.WaitGroup{}
-	s := newSender(timeout)
+	s := &channelSender{
+		c:       make(chan interface{}, 1),
+		timeout: timeout,
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -76,13 +78,6 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 	return rsender
 }
 
-func newSender(timeout time.Duration) *channelSender {
-	return &channelSender{
-		c:       make(chan interface{}, 1),
-		timeout: timeout,
-	}
-}
-
 func (s *channelSender) send(value interface{}) {
 	s.c <- value
 	close(s.c)
@@ -128,8 +123,7 @@ func (s *resultSenderClosable) SendElement(name string, el interface{}) (err err
 			return
 		}
 	}
-	err = s.tryToSendSection()
-	if err != nil {
+	if err = s.tryToSendSection(); err != nil {
 		return
 	}
 	element := element{
