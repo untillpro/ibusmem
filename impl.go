@@ -110,7 +110,9 @@ func (s *resultSenderClosable) ObjectSection(sectionType string, path []string, 
 		path:        path,
 		elements:    s.updateElemsChannel(),
 	}
-	return s.SendElement("", element)
+	err = s.SendElement("", element)
+	s.elements = nil
+	return
 }
 
 func (s *resultSenderClosable) SendElement(name string, el interface{}) (err error) {

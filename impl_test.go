@@ -15,7 +15,7 @@ import (
 	ibus "github.com/untillpro/airs-ibus"
 )
 
-func TestBasicUsage_Bus(t *testing.T) {
+func TestBasicUsage(t *testing.T) {
 	require := require.New(t)
 	t.Run("Single response basic usage", func(t *testing.T) {
 		var bus ibus.IBus
@@ -61,15 +61,21 @@ func TestBasicUsage_Bus(t *testing.T) {
 				// send an unmarshalable element -> error
 				require.NotNil(rs.SendElement("", func() {}))
 
+				require.Nil(rs.ObjectSection("object", []string{"object-path"}, "value"))
+				require.Nil(rs.ObjectSection("", nil, nil)) // nothingness will not be sent
+
+				// try to send element on object section -> panic
+				require.Panics(func() { rs.SendElement("", 42) })
+
 				rs.StartMapSection("map", []string{"map-path"})
 				require.Nil(rs.SendElement("key1", "value1"))
 				require.Nil(rs.SendElement("key2", "value2"))
 				require.Nil(rs.SendElement("", nil)) // nothingness will not be sent
-				require.Nil(rs.ObjectSection("object", []string{"object-path"}, "value"))
-				require.Nil(rs.ObjectSection("", nil, nil)) // nothingness will not be sent
+
 				rs.Close(testErr)
 
 				// any action after close -> panic
+				require.Panics(func() { rs.SendElement("", 42) })
 				require.Panics(func() { rs.StartArraySection("array", []string{"array-path"}) })
 				require.Panics(func() { rs.StartMapSection("array", []string{"array-path"}) })
 				require.Panics(func() { rs.ObjectSection("array", []string{"array-path"}, nil) })
@@ -102,6 +108,13 @@ func TestBasicUsage_Bus(t *testing.T) {
 		require.Nil(val)
 		require.False(ok)
 
+		// expect object section
+		section = <-sections
+		objectSection := section.(ibus.IObjectSection)
+		require.Equal("object", objectSection.Type())
+		require.Equal([]string{"object-path"}, objectSection.Path())
+		require.Equal(`"value"`, string(objectSection.Value()))
+
 		// expect map section
 		section = <-sections
 		mapSection := section.(ibus.IMapSection)
@@ -121,13 +134,6 @@ func TestBasicUsage_Bus(t *testing.T) {
 		require.False(ok)
 		require.Equal("", name)
 		require.Nil(val)
-
-		// expect object section
-		section = <-sections
-		objectSection := section.(ibus.IObjectSection)
-		require.Equal("object", objectSection.Type())
-		require.Equal([]string{"object-path"}, objectSection.Path())
-		require.Equal(`"value"`, string(objectSection.Value()))
 
 		// no more sections
 		_, ok = <-sections
