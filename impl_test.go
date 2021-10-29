@@ -379,6 +379,9 @@ func TestObjectSection_Value(t *testing.T) {
 	require.Empty(response)
 	require.Equal([]byte("bb"), object.Value())
 	require.Nil(object.Value())
+
+	_, ok := <-sections
+	require.False(ok)
 	require.Nil(*secErr)
 }
 
