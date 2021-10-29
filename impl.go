@@ -170,7 +170,7 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 	select {
 	case s.elements <- value:
-		return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.elemets<- success)
+		return s.ctx.Err() // ctx.Done() has priority on simultaneous (s.ctx.Done() and s.elemets<- success)
 	case <-s.ctx.Done():
 		return s.ctx.Err()
 	case <-time.After(s.timeout):
