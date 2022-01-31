@@ -19,7 +19,6 @@ import (
 func (b *bus) SendRequest2(clientCtx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	defer func() {
 		switch r := recover().(type) {
-		case nil:
 		case string:
 			err = errors.New(r)
 		case error:
@@ -27,7 +26,11 @@ func (b *bus) SendRequest2(clientCtx context.Context, request ibus.Request, time
 		}
 	}()
 	wg := sync.WaitGroup{}
-	s := newSender(clientCtx, timeout)
+	s := &channelSender{
+		c:         make(chan interface{}, 1),
+		timeout:   timeout,
+		clientCtx: clientCtx,
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -68,20 +71,12 @@ func (b *bus) SendParallelResponse2(sender interface{}) (rsender ibus.IResultSen
 		sections:     make(chan ibus.ISection),
 		err:          &err,
 		timeout:      s.timeout,
-		clientCtx:          s.clientCtx,
+		clientCtx:    s.clientCtx,
 		timerSection: b.timerSection,
 		timerElement: b.timerElement,
 	}
 	s.send(rsender)
 	return rsender
-}
-
-func newSender(clientCtx context.Context, timeout time.Duration) *channelSender {
-	return &channelSender{
-		c:         make(chan interface{}, 1),
-		timeout:   timeout,
-		clientCtx: clientCtx,
-	}
 }
 
 func (s *channelSender) send(value interface{}) {
@@ -129,8 +124,7 @@ func (s *resultSenderClosable) SendElement(name string, el interface{}) (err err
 			return
 		}
 	}
-	err = s.tryToSendSection()
-	if err != nil {
+	if err = s.tryToSendSection(); err != nil {
 		return
 	}
 	element := element{
@@ -174,7 +168,7 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 	select {
 	case s.elements <- value:
-		return s.clientCtx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.elemets<- success)
+		return s.clientCtx.Err() // ctx.Done() has priority on simultaneous (s.ctx.Done() and s.elemets<- success)
 	case <-s.clientCtx.Done():
 		return s.clientCtx.Err()
 	case <-s.timerElement(s.timeout):
