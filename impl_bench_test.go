@@ -18,8 +18,8 @@ import (
 
 func BenchmarkSectionedRequestResponse(b *testing.B) {
 	var bus ibus.IBus
-	bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-		rs := bus.SendParallelResponse2(ctx, sender)
+	bus = Provide(func(sender interface{}, request ibus.Request) {
+		rs := bus.SendParallelResponse2(sender)
 		go func() {
 			require.Nil(b, rs.ObjectSection("secObj", []string{"meta"}, "elem"))
 			rs.StartMapSection("secMap", []string{"classifier", "2"})

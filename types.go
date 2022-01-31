@@ -12,15 +12,16 @@ import (
 )
 
 type bus struct {
-	requestHandler func(ctx context.Context, sender interface{}, request ibus.Request)
+	requestHandler func(sender interface{}, request ibus.Request)
 	timerResponse  func(d time.Duration) <-chan time.Time
 	timerSection   func(d time.Duration) <-chan time.Time
 	timerElement   func(d time.Duration) <-chan time.Time
 }
 
 type channelSender struct {
-	c       chan interface{}
-	timeout time.Duration
+	c         chan interface{}
+	timeout   time.Duration
+	clientCtx context.Context
 }
 
 type resultSenderClosable struct {
@@ -29,7 +30,7 @@ type resultSenderClosable struct {
 	elements       chan element
 	err            *error
 	timeout        time.Duration
-	ctx            context.Context
+	clientCtx      context.Context // closed if client is e.g. disconnected
 	timerSection   func(d time.Duration) <-chan time.Time
 	timerElement   func(d time.Duration) <-chan time.Time
 }

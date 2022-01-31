@@ -19,16 +19,16 @@ func TestBasicUsage(t *testing.T) {
 	require := require.New(t)
 	t.Run("Single response basic usage", func(t *testing.T) {
 		var bus ibus.IBus
-		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		bus = Provide(func(sender interface{}, request ibus.Request) {
 
 			// wrong sender -> panic
-			require.Panics(func() { bus.SendResponse(ctx, "wrong sender", ibus.Response{}) })
+			require.Panics(func() { bus.SendResponse("wrong sender", ibus.Response{}) })
 
-			bus.SendResponse(ctx, sender, ibus.Response{Data: []byte("hello world")})
+			bus.SendResponse(sender, ibus.Response{Data: []byte("hello world")})
 
 			// second response -> panic
-			require.Panics(func() { bus.SendParallelResponse2(ctx, sender) })
-			require.Panics(func() { bus.SendResponse(ctx, sender, ibus.Response{}) })
+			require.Panics(func() { bus.SendParallelResponse2(sender) })
+			require.Panics(func() { bus.SendResponse(sender, ibus.Response{}) })
 
 		})
 
@@ -42,12 +42,12 @@ func TestBasicUsage(t *testing.T) {
 		testErr := errors.New("error from result sender")
 		ch := make(chan interface{})
 		var bus ibus.IBus
-		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		bus = Provide(func(sender interface{}, request ibus.Request) {
 
 			// wrong sender -> panic
-			require.Panics(func() { bus.SendParallelResponse2(ctx, "wrong sender") })
+			require.Panics(func() { bus.SendParallelResponse2("wrong sender") })
 
-			rs := bus.SendParallelResponse2(ctx, sender)
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 
 				// try to send an element without section -> panic
@@ -83,8 +83,8 @@ func TestBasicUsage(t *testing.T) {
 			}()
 
 			// second response -> panic
-			require.Panics(func() { bus.SendParallelResponse2(ctx, sender) })
-			require.Panics(func() { bus.SendResponse(ctx, sender, ibus.Response{}) })
+			require.Panics(func() { bus.SendParallelResponse2(sender) })
+			require.Panics(func() { bus.SendResponse(sender, ibus.Response{}) })
 		})
 
 		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
@@ -145,7 +145,7 @@ func TestBasicUsage(t *testing.T) {
 		require.Panics(func() { Provide(nil) })
 	})
 	t.Run("Should return timeout error if no response at all", func(t *testing.T) {
-		bus := provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		bus := provide(func(sender interface{}, request ibus.Request) {
 			// do not send response to trigger the timeout case
 		}, timeoutTrigger, time.After, time.After)
 
@@ -161,7 +161,7 @@ func TestBasicUsage(t *testing.T) {
 func TestBus_SendRequest2(t *testing.T) {
 	require := require.New(t)
 	t.Run("Should return error on ctx done", func(t *testing.T) {
-		bus := Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		bus := Provide(func(sender interface{}, request ibus.Request) {
 			// do not send response to trigger ctx.Done() case
 		})
 		ctx, cancel := context.WithCancel(context.Background())
@@ -175,7 +175,7 @@ func TestBus_SendRequest2(t *testing.T) {
 		require.Nil(secErr)
 	})
 	t.Run("Should handle panic in request handler with message", func(t *testing.T) {
-		bus := Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		bus := Provide(func(sender interface{}, request ibus.Request) {
 			panic("boom")
 		})
 
@@ -188,7 +188,7 @@ func TestBus_SendRequest2(t *testing.T) {
 	})
 	t.Run("Should handle panic in request handler with error", func(t *testing.T) {
 		testErr := errors.New("boom")
-		bus := Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
+		bus := Provide(func(sender interface{}, request ibus.Request) {
 			panic(testErr)
 		})
 
@@ -206,8 +206,8 @@ func TestResultSenderClosable_StartArraySection(t *testing.T) {
 	t.Run("Should return timeout error on long section read", func(t *testing.T) {
 		var bus ibus.IBus
 		ch := make(chan interface{})
-		bus = provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			rs := bus.SendParallelResponse2(ctx, sender)
+		bus = provide(func(sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 				err := rs.ObjectSection("", nil, 42)
 				ch <- nil // signal tried to send a section
@@ -228,8 +228,8 @@ func TestResultSenderClosable_StartArraySection(t *testing.T) {
 	t.Run("Should return error when ctx done on send section", func(t *testing.T) {
 		var bus ibus.IBus
 		ch := make(chan interface{})
-		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			rs := bus.SendParallelResponse2(ctx, sender)
+		bus = Provide(func(sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 				<-ch // wait for cancel
 				err := rs.ObjectSection("", nil, 42)
@@ -261,8 +261,8 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 			Name string
 		}
 		var bus ibus.IBus
-		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			rs := bus.SendParallelResponse2(ctx, sender)
+		bus = Provide(func(sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 				require.Nil(rs.ObjectSection("", nil, article{ID: 100, Name: "Cola"}))
 				rs.Close(nil)
@@ -287,8 +287,8 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 			Y int64
 		}
 		var bus ibus.IBus
-		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			rs := bus.SendParallelResponse2(ctx, sender)
+		bus = Provide(func(sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 				require.Nil(rs.ObjectSection("", nil, []byte(`{"X":52,"Y":89}`)))
 				rs.Close(nil)
@@ -308,8 +308,8 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 	})
 	t.Run("Should return error when client reads element too long", func(t *testing.T) {
 		var bus ibus.IBus
-		bus = provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			rs := bus.SendParallelResponse2(ctx, sender)
+		bus = provide(func(sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 				rs.StartArraySection("", nil)
 				require.ErrorIs(rs.SendElement("", 0), ibus.ErrNoConsumer)
@@ -330,8 +330,8 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 	t.Run("Should return error when ctx done on send element", func(t *testing.T) {
 		var bus ibus.IBus
 		ch := make(chan interface{})
-		bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-			rs := bus.SendParallelResponse2(ctx, sender)
+		bus = Provide(func(sender interface{}, request ibus.Request) {
+			rs := bus.SendParallelResponse2(sender)
 			go func() {
 				rs.StartArraySection("", nil)
 				require.Nil(rs.SendElement("", 0))
@@ -364,8 +364,8 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 func TestObjectSection_Value(t *testing.T) {
 	var bus ibus.IBus
 	require := require.New(t)
-	bus = Provide(func(ctx context.Context, sender interface{}, request ibus.Request) {
-		rs := bus.SendParallelResponse2(ctx, sender)
+	bus = Provide(func(sender interface{}, request ibus.Request) {
+		rs := bus.SendParallelResponse2(sender)
 		go func() {
 			require.Nil(rs.ObjectSection("", nil, []byte("bb")))
 			rs.Close(nil)
@@ -383,6 +383,55 @@ func TestObjectSection_Value(t *testing.T) {
 	_, ok := <-sections
 	require.False(ok)
 	require.Nil(*secErr)
+}
+
+func TestClientDisconnectOnSectionsSending(t *testing.T) {
+	require := require.New(t)
+	ch := make(chan interface{})
+	var bus ibus.IBus
+	bus = Provide(func(sender interface{}, request ibus.Request) {
+		rs := bus.SendParallelResponse2(sender)
+		go func() {
+			rs.StartArraySection("array", []string{"array-path"})
+			require.Nil(rs.SendElement("", "element1"))
+			ch <- nil
+			// client is disconnected here
+			<-ch
+			require.Error(context.Canceled, rs.SendElement("", "element2"))
+			rs.Close(nil)
+			close(ch)
+		}()
+	})
+
+	clientCtx, clientCtxCancel := context.WithCancel(context.Background())
+	response, sections, secErr, err := bus.SendRequest2(clientCtx, ibus.Request{}, ibus.DefaultTimeout)
+	require.Nil(err)
+	require.Empty(response)
+
+	// expect array section
+	section := <-sections
+	arraySection := section.(ibus.IArraySection)
+	require.Equal("array", arraySection.Type())
+	require.Equal([]string{"array-path"}, arraySection.Path())
+
+	// elems of array section
+	val, ok := arraySection.Next()
+	require.True(ok)
+	require.Equal(`"element1"`, string(val))
+
+	// simulate client disconnect
+	<-ch
+	clientCtxCancel()
+	ch <- nil
+
+	_, ok = arraySection.Next()
+	require.False(ok)
+
+	// no more sections
+	_, ok = <-sections
+	require.False(ok)
+	require.Nil(*secErr)
+	<-ch
 }
 
 func timeoutTrigger(d time.Duration) <-chan time.Time {

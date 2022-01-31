@@ -16,7 +16,7 @@ import (
 
 // если одновременно ctx.Done() и SendParallelResponse, то возвращаем канал секций + err = ctx.Err()
 // канал секций в этом случае никто не читает (по контракту IBus), поэтому точно сработает ветка ctx.Done в trySendSection()
-func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
+func (b *bus) SendRequest2(clientCtx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
 	defer func() {
 		switch r := recover().(type) {
 		case nil:
@@ -27,7 +27,7 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 		}
 	}()
 	wg := sync.WaitGroup{}
-	s := newSender(timeout)
+	s := newSender(clientCtx, timeout)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -41,34 +41,34 @@ func (b *bus) SendRequest2(ctx context.Context, request ibus.Request, timeout ti
 				sections = rsender.sections
 				secError = rsender.err
 			}
-			err = ctx.Err() // to make ctx.Done() have priority
+			err = clientCtx.Err() // to make ctx.Done() have priority
 			return
-		case <-ctx.Done():
-			err = ctx.Err()
+		case <-clientCtx.Done():
+			err = clientCtx.Err()
 			return
 		case <-b.timerResponse(timeout):
 			err = ibus.ErrTimeoutExpired
 			return
 		}
 	}()
-	b.requestHandler(ctx, s, request)
+	b.requestHandler(s, request)
 	wg.Wait()
 	return res, sections, secError, err
 }
 
-func (b *bus) SendResponse(_ context.Context, sender interface{}, response ibus.Response) {
+func (b *bus) SendResponse(sender interface{}, response ibus.Response) {
 	s := sender.(*channelSender)
 	s.send(response)
 }
 
-func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rsender ibus.IResultSenderClosable) {
+func (b *bus) SendParallelResponse2(sender interface{}) (rsender ibus.IResultSenderClosable) {
 	s := sender.(*channelSender)
 	var err error
 	rsender = &resultSenderClosable{
 		sections:     make(chan ibus.ISection),
 		err:          &err,
 		timeout:      s.timeout,
-		ctx:          ctx,
+		clientCtx:          s.clientCtx,
 		timerSection: b.timerSection,
 		timerElement: b.timerElement,
 	}
@@ -76,10 +76,11 @@ func (b *bus) SendParallelResponse2(ctx context.Context, sender interface{}) (rs
 	return rsender
 }
 
-func newSender(timeout time.Duration) *channelSender {
+func newSender(clientCtx context.Context, timeout time.Duration) *channelSender {
 	return &channelSender{
-		c:       make(chan interface{}, 1),
-		timeout: timeout,
+		c:         make(chan interface{}, 1),
+		timeout:   timeout,
+		clientCtx: clientCtx,
 	}
 }
 
@@ -160,9 +161,9 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 		select {
 		case s.sections <- s.currentSection:
 			s.currentSection = nil
-			return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.sections<- success)
-		case <-s.ctx.Done():
-			return s.ctx.Err()
+			return s.clientCtx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.sections<- success)
+		case <-s.clientCtx.Done():
+			return s.clientCtx.Err()
 		case <-s.timerSection(s.timeout):
 			return ibus.ErrNoConsumer
 		}
@@ -173,9 +174,9 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 func (s *resultSenderClosable) tryToSendElement(value element) (err error) {
 	select {
 	case s.elements <- value:
-		return s.ctx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.elemets<- success)
-	case <-s.ctx.Done():
-		return s.ctx.Err()
+		return s.clientCtx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.elemets<- success)
+	case <-s.clientCtx.Done():
+		return s.clientCtx.Err()
 	case <-s.timerElement(s.timeout):
 		return ibus.ErrNoConsumer
 	}
