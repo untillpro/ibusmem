@@ -170,7 +170,7 @@ func (s *resultSenderClosable) tryToSendSection() (err error) {
 		select {
 		case s.sections <- s.currentSection:
 			s.currentSection = nil
-			return s.clientCtx.Err() // ctx.Done() has priority on simulatenous (s.ctx.Done() and s.sections<- success)
+			return s.clientCtx.Err() // ctx.Done() has priority on simultaneous (s.ctx.Done() and s.sections<- success)
 		case <-s.clientCtx.Done():
 			return s.clientCtx.Err()
 		case <-s.timerSection(s.timeout):
