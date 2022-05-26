@@ -8,24 +8,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
+	logger "github.com/heeus/core-logger"
 	ibus "github.com/untillpro/airs-ibus"
 )
 
 // если одновременно ctx.Done() и SendParallelResponse, то возвращаем канал секций + err = ctx.Err()
 // канал секций в этом случае никто не читает (по контракту IBus), поэтому точно сработает ветка ctx.Done в trySendSection()
 func (b *bus) SendRequest2(clientCtx context.Context, request ibus.Request, timeout time.Duration) (res ibus.Response, sections <-chan ibus.ISection, secError *error, err error) {
-	defer func() {
-		switch r := recover().(type) {
-		case string:
-			err = errors.New(r)
-		case error:
-			err = r
-		}
-	}()
 	wg := sync.WaitGroup{}
+	handlerPanic := make(chan interface{}, 1)
+	defer func() {
+		if r := recover(); r != nil {
+			debug.Stack()
+			logger.Error("handler panic:", fmt.Sprint(r), "\n", string(debug.Stack()))
+			// will process panic in the goroutine instead of update err here to avoid data race
+			// https://dev.untill.com/projects/#!607751
+			handlerPanic <- r
+		}
+		wg.Wait()
+		close(handlerPanic)
+	}()
 	s := &channelSender{
 		c:         make(chan interface{}, 1),
 		timeout:   timeout,
@@ -51,6 +58,14 @@ func (b *bus) SendRequest2(clientCtx context.Context, request ibus.Request, time
 			return
 		case <-b.timerResponse(timeout):
 			err = ibus.ErrTimeoutExpired
+			return
+		case rIntf := <-handlerPanic:
+			switch r := rIntf.(type) {
+			case string:
+				err = errors.New(r)
+			case error:
+				err = r
+			}
 			return
 		}
 	}()

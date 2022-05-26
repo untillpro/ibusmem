@@ -393,11 +393,11 @@ func TestClientDisconnectOnSectionsSending(t *testing.T) {
 		rs := bus.SendParallelResponse2(sender)
 		go func() {
 			rs.StartArraySection("array", []string{"array-path"})
-			require.Nil(rs.SendElement("", "element1"))
+			require.Nil(rs.SendElement("1", "element1"))
 			ch <- nil
 			// client is disconnected here
 			<-ch
-			require.Error(context.Canceled, rs.SendElement("", "element2"))
+			require.Error(context.Canceled, rs.SendElement("2", "element2"))
 			rs.Close(nil)
 			close(ch)
 		}()
@@ -424,8 +424,14 @@ func TestClientDisconnectOnSectionsSending(t *testing.T) {
 	clientCtxCancel()
 	ch <- nil
 
-	_, ok = arraySection.Next()
-	require.False(ok)
+	val, ok = arraySection.Next()
+	if ok {
+		// client context canceled -> write to sections channel is possible anyway because
+		// sectons<- and <-ctx.Done() cases has the same probability at resultSenderClosable.tryToSendElement(). ctx.Err() will be retuned even on sectons<-
+		require.Equal(`"element2"`, string(val))
+		_, ok = arraySection.Next()
+		require.False(ok)
+	}
 
 	// no more sections
 	_, ok = <-sections
