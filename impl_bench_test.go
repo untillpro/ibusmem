@@ -68,7 +68,7 @@ func BenchmarkSectionedRequestResponse(b *testing.B) {
 	})
 }
 
-func BenchmarkSimple(b *testing.B) {
+func BenchmarkOneSectionElement(b *testing.B) {
 	var bus ibus.IBus
 	bus = Provide(func(requestCtx context.Context, sender interface{}, request ibus.Request) {
 		rs := bus.SendParallelResponse2(sender)
@@ -85,7 +85,30 @@ func BenchmarkSimple(b *testing.B) {
 
 			section := <-sections
 			secObj := section.(ibus.IObjectSection)
-			_ = secObj.Value()
+			if len(secObj.Value()) != 7 { // "hello"
+				b.Fatal()
+			}
+		}
+		elapsed := time.Since(start).Seconds()
+		b.ReportMetric(float64(b.N)/elapsed, "rps")
+	})
+}
+
+func BenchmarkNonsectionedResponse(b *testing.B) {
+	var bus ibus.IBus
+	bus = Provide(func(requestCtx context.Context, sender interface{}, request ibus.Request) {
+		bus.SendResponse(sender, ibus.Response{
+			Data: []byte("hello"),
+		})
+	})
+
+	b.Run("", func(b *testing.B) {
+		start := time.Now()
+		for i := 0; i < b.N; i++ {
+			resp, _, _, _ := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+			if len(resp.Data) != 5 {
+				b.Fatal()
+			}
 		}
 		elapsed := time.Since(start).Seconds()
 		b.ReportMetric(float64(b.N)/elapsed, "rps")
