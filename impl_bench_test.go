@@ -86,10 +86,6 @@ func BenchmarkSimple(b *testing.B) {
 			section := <-sections
 			secObj := section.(ibus.IObjectSection)
 			_ = secObj.Value()
-
-			if _, ok := <-sections; ok {
-				b.Fatal()
-			}
 		}
 		elapsed := time.Since(start).Seconds()
 		b.ReportMetric(float64(b.N)/elapsed, "rps")
