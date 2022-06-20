@@ -74,7 +74,7 @@ func BenchmarkSimple(b *testing.B) {
 		rs := bus.SendParallelResponse2(sender)
 		go func() {
 			require.Nil(b, rs.ObjectSection("secObj", nil, "hello"))
-			rs.Close(errors.New("test error"))
+			rs.Close(nil)
 		}()
 	})
 
