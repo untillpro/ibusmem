@@ -67,3 +67,31 @@ func BenchmarkSectionedRequestResponse(b *testing.B) {
 		b.ReportMetric(float64(b.N)/elapsed, "rps")
 	})
 }
+
+func BenchmarkSimple(b *testing.B) {
+	var bus ibus.IBus
+	bus = Provide(func(requestCtx context.Context, sender interface{}, request ibus.Request) {
+		rs := bus.SendParallelResponse2(sender)
+		go func() {
+			require.Nil(b, rs.ObjectSection("secObj", nil, "hello"))
+			rs.Close(errors.New("test error"))
+		}()
+	})
+
+	b.Run("", func(b *testing.B) {
+		start := time.Now()
+		for i := 0; i < b.N; i++ {
+			_, sections, _, _ := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+
+			section := <-sections
+			secObj := section.(ibus.IObjectSection)
+			_ = secObj.Value()
+
+			if _, ok := <-sections; ok {
+				b.Fatal()
+			}
+		}
+		elapsed := time.Since(start).Seconds()
+		b.ReportMetric(float64(b.N)/elapsed, "rps")
+	})
+}
