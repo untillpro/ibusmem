@@ -335,6 +335,7 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 			go func() {
 				rs.StartArraySection("", nil)
 				require.Nil(rs.SendElement("", 0))
+				<-ch // wait for element read
 				<-ch // wait for cancel
 				err := rs.SendElement("", 1)
 				ch <- nil // signal ok to read next element. That forces ctx.Done() case fire at tryToSendElement
@@ -351,6 +352,9 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		val, ok := array.Next()
 		require.True(ok)
 		require.Equal([]byte("0"), val)
+		ch <- nil // signal we're read an element
+		// cancel should be synchronzied, otherwise possible at tryToSendElement: write to elements channel, read it here, cancel here,
+		// then return non-nil ctx.Err() from tryToSendElement -> SendElement early failed
 		cancel()
 		ch <- nil           // signal cancelled
 		<-ch                // wait for ok to read next element to force ctx.Done case fire at tryToSendElement
