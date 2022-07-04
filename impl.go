@@ -24,7 +24,6 @@ func (b *bus) SendRequest2(clientCtx context.Context, request ibus.Request, time
 	handlerPanic := make(chan interface{}, 1)
 	defer func() {
 		if r := recover(); r != nil {
-			debug.Stack()
 			logger.Error("handler panic:", fmt.Sprint(r), "\n", string(debug.Stack()))
 			// will process panic in the goroutine instead of update err here to avoid data race
 			// https://dev.untill.com/projects/#!607751
