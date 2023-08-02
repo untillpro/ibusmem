@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	logger "github.com/heeus/core-logger"
 	ibus "github.com/untillpro/airs-ibus"
+	"github.com/untillpro/goutils/logger"
 )
 
 // если одновременно ctx.Done() и SendParallelResponse, то возвращаем канал секций + err = ctx.Err()
