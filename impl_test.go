@@ -87,7 +87,8 @@ func TestBasicUsage(t *testing.T) {
 			require.Panics(func() { bus.SendResponse(sender, ibus.Response{}) })
 		})
 
-		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+		requestCtx := context.Background()
+		response, sections, secErr, err := bus.SendRequest2(requestCtx, ibus.Request{}, ibus.DefaultTimeout)
 		require.Nil(err)
 		require.Empty(response)
 
@@ -98,13 +99,13 @@ func TestBasicUsage(t *testing.T) {
 		require.Equal([]string{"array-path"}, arraySection.Path())
 
 		// elems of array section
-		val, ok := arraySection.Next()
+		val, ok := arraySection.Next(requestCtx)
 		require.True(ok)
 		require.Equal(`"element1"`, string(val))
-		val, ok = arraySection.Next()
+		val, ok = arraySection.Next(requestCtx)
 		require.True(ok)
 		require.Equal(`"element2"`, string(val))
-		val, ok = arraySection.Next()
+		val, ok = arraySection.Next(requestCtx)
 		require.Nil(val)
 		require.False(ok)
 
@@ -113,7 +114,7 @@ func TestBasicUsage(t *testing.T) {
 		objectSection := section.(ibus.IObjectSection)
 		require.Equal("object", objectSection.Type())
 		require.Equal([]string{"object-path"}, objectSection.Path())
-		require.Equal(`"value"`, string(objectSection.Value()))
+		require.Equal(`"value"`, string(objectSection.Value(requestCtx)))
 
 		// expect map section
 		section = <-sections
@@ -122,15 +123,15 @@ func TestBasicUsage(t *testing.T) {
 		require.Equal([]string{"map-path"}, mapSection.Path())
 
 		// elems of map section
-		name, val, ok := mapSection.Next()
+		name, val, ok := mapSection.Next(requestCtx)
 		require.True(ok)
 		require.Equal("key1", name)
 		require.Equal(`"value1"`, string(val))
-		name, val, ok = mapSection.Next()
+		name, val, ok = mapSection.Next(requestCtx)
 		require.True(ok)
 		require.Equal("key2", name)
 		require.Equal(`"value2"`, string(val))
-		name, val, ok = mapSection.Next()
+		name, val, ok = mapSection.Next(requestCtx)
 		require.False(ok)
 		require.Equal("", name)
 		require.Nil(val)
@@ -270,11 +271,12 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		})
 		a := article{}
 
-		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+		requestCtx := context.Background()
+		response, sections, secErr, err := bus.SendRequest2(requestCtx, ibus.Request{}, ibus.DefaultTimeout)
 
 		require.Nil(err)
 		require.Empty(response)
-		require.Nil(json.Unmarshal((<-sections).(ibus.IObjectSection).Value(), &a))
+		require.Nil(json.Unmarshal((<-sections).(ibus.IObjectSection).Value(requestCtx), &a))
 		require.Equal(int64(100), a.ID)
 		require.Equal("Cola", a.Name)
 		_, ok := <-sections
@@ -296,10 +298,11 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		})
 		p := point{}
 
-		response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+		requestCtx := context.Background()
+		response, sections, secErr, err := bus.SendRequest2(requestCtx, ibus.Request{}, ibus.DefaultTimeout)
 		require.Nil(err)
 		require.Empty(response)
-		require.Nil(json.Unmarshal((<-sections).(ibus.IObjectSection).Value(), &p))
+		require.Nil(json.Unmarshal((<-sections).(ibus.IObjectSection).Value(requestCtx), &p))
 		require.Equal(int64(52), p.X)
 		require.Equal(int64(89), p.Y)
 		_, ok := <-sections
@@ -349,7 +352,7 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		require.Nil(err)
 		require.Empty(response)
 		array := (<-sections).(ibus.IArraySection)
-		val, ok := array.Next()
+		val, ok := array.Next(ctx)
 		require.True(ok)
 		require.Equal([]byte("0"), val)
 		ch <- nil // signal we're read an element
@@ -358,7 +361,7 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		cancel()
 		ch <- nil           // signal cancelled
 		<-ch                // wait for ok to read next element to force ctx.Done case fire at tryToSendElement
-		_, _ = array.Next() // note: element could be sent on ctx.Done() because cases order is undefined at tryToSendElement. But SendElement() will return error in any case
+		_, _ = array.Next(ctx) // note: element could be sent on ctx.Done() because cases order is undefined at tryToSendElement. But SendElement() will return error in any case
 		_, ok = <-sections
 		require.False(ok)
 		require.Nil(*secErr)
@@ -376,13 +379,14 @@ func TestObjectSection_Value(t *testing.T) {
 		}()
 	})
 
-	response, sections, secErr, err := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+	requestCtx := context.Background()
+	response, sections, secErr, err := bus.SendRequest2(requestCtx, ibus.Request{}, ibus.DefaultTimeout)
 
 	object := (<-sections).(ibus.IObjectSection)
 	require.Nil(err)
 	require.Empty(response)
-	require.Equal([]byte("bb"), object.Value())
-	require.Nil(object.Value())
+	require.Equal([]byte("bb"), object.Value(requestCtx))
+	require.Nil(object.Value(requestCtx))
 
 	_, ok := <-sections
 	require.False(ok)
@@ -419,7 +423,7 @@ func TestClientDisconnectOnSectionsSending(t *testing.T) {
 	require.Equal([]string{"array-path"}, arraySection.Path())
 
 	// elems of array section
-	val, ok := arraySection.Next()
+	val, ok := arraySection.Next(clientCtx)
 	require.True(ok)
 	require.Equal(`"element1"`, string(val))
 
@@ -428,12 +432,12 @@ func TestClientDisconnectOnSectionsSending(t *testing.T) {
 	clientCtxCancel()
 	ch <- nil
 
-	val, ok = arraySection.Next()
+	val, ok = arraySection.Next(clientCtx)
 	if ok {
 		// client context canceled -> write to sections channel is possible anyway because
 		// sectons<- and <-ctx.Done() cases has the same probability at resultSenderClosable.tryToSendElement(). ctx.Err() will be retuned even on sectons<-
 		require.Equal(`"element2"`, string(val))
-		_, ok = arraySection.Next()
+		_, ok = arraySection.Next(clientCtx)
 		require.False(ok)
 	}
 

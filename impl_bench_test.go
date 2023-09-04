@@ -38,26 +38,27 @@ func BenchmarkSectionedRequestResponse(b *testing.B) {
 	b.Run("", func(b *testing.B) {
 		start := time.Now()
 		for i := 0; i < b.N; i++ {
-			_, sections, _, _ := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+			ctx := context.Background()
+			_, sections, _, _ := bus.SendRequest2(ctx, ibus.Request{}, ibus.DefaultTimeout)
 
 			section := <-sections
 			secObj := section.(ibus.IObjectSection)
-			secObj.Value()
+			secObj.Value(ctx)
 
 			section = <-sections
 			secMap := section.(ibus.IMapSection)
-			secMap.Next()
-			secMap.Next()
+			secMap.Next(ctx)
+			secMap.Next(ctx)
 
 			section = <-sections
 			secArr := section.(ibus.IArraySection)
-			secArr.Next()
-			secArr.Next()
+			secArr.Next(ctx)
+			secArr.Next(ctx)
 
 			section = <-sections
 			secMap = section.(ibus.IMapSection)
-			secMap.Next()
-			secMap.Next()
+			secMap.Next(ctx)
+			secMap.Next(ctx)
 
 			if _, ok := <-sections; ok {
 				b.Fatal()
@@ -81,11 +82,12 @@ func BenchmarkOneSectionElement(b *testing.B) {
 	b.Run("", func(b *testing.B) {
 		start := time.Now()
 		for i := 0; i < b.N; i++ {
-			_, sections, _, _ := bus.SendRequest2(context.Background(), ibus.Request{}, ibus.DefaultTimeout)
+			ctx := context.Background()
+			_, sections, _, _ := bus.SendRequest2(ctx, ibus.Request{}, ibus.DefaultTimeout)
 
 			section := <-sections
 			secObj := section.(ibus.IObjectSection)
-			if len(secObj.Value()) != 7 { // "hello"
+			if len(secObj.Value(ctx)) != 7 { // "hello"
 				b.Fatal()
 			}
 		}

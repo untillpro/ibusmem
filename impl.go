@@ -198,9 +198,13 @@ func (s arraySection) Path() []string {
 	return s.path
 }
 
-func (s arraySection) Next() (value []byte, ok bool) {
-	for e := range s.elems {
-		return e.value, true
+func (s arraySection) Next(ctx context.Context) (value []byte, ok bool) {
+	select {
+	case e, ok := <-s.elems:
+		if ok && ctx.Err() == nil {
+			return e.value, true
+		}
+	case <-ctx.Done():
 	}
 	return nil, false
 }
@@ -213,9 +217,13 @@ func (s mapSection) Path() []string {
 	return s.path
 }
 
-func (s mapSection) Next() (name string, value []byte, ok bool) {
-	for e := range s.elems {
-		return e.name, e.value, true
+func (s mapSection) Next(ctx context.Context) (name string, value []byte, ok bool) {
+	select {
+	case e, ok := <-s.elems:
+		if ok && ctx.Err() == nil {
+			return e.name, e.value, true
+		}
+	case <-ctx.Done():
 	}
 	return "", nil, false
 }
@@ -228,11 +236,16 @@ func (s *objectSection) Path() []string {
 	return s.path
 }
 
-func (s *objectSection) Value() []byte {
+func (s *objectSection) Value(ctx context.Context) []byte {
 	if !s.elementReceived {
-		s.elementReceived = true
-		element := <-s.elements
-		return element.value
+		select {
+		case e, ok := <-s.elements:
+			if ok && ctx.Err() == nil {
+				s.elementReceived = true
+				return e.value
+			}
+		case <-ctx.Done():
+		}
 	}
 	return nil
 }

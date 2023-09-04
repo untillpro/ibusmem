@@ -12,6 +12,8 @@ github.com/stretchr/testify v1.8.1 h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKs
 github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/untillpro/airs-ibus v0.0.0-20220131142157-995500ee0402 h1:Z6JBLs2P3BWwSBdUzqk5pMWCHUjpeJq7x2Dut8veVvk=
 github.com/untillpro/airs-ibus v0.0.0-20220131142157-995500ee0402/go.mod h1:1I4FoKKps86qZfFCh+QjcGFXPlNgYHF68L4L04bAU6k=
+github.com/untillpro/airs-ibus v0.0.0-20230904100809-21eaae083040 h1:6IkhNm6unxJpCqkdKk1QvOmuTV7VL+JMAFDQDGqoeJw=
+github.com/untillpro/airs-ibus v0.0.0-20230904100809-21eaae083040/go.mod h1:q6sL+/tsxO3upNtujUUG/5B316qvPjy5aHc1uR/W+C0=
 github.com/untillpro/goutils v0.0.0-20230413153406-ba6af4dbd062 h1:eUh7yVxTgKlTrvgOnR/1rq8sV9B9C/0WFxE78rz9eCY=
 github.com/untillpro/goutils v0.0.0-20230413153406-ba6af4dbd062/go.mod h1:ipXVry4jug7qjhSKiwIM7j62//JrtNdOPSoFREN2pwk=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
