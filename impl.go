@@ -13,8 +13,9 @@ import (
 	"sync"
 	"time"
 
-	ibus "github.com/untillpro/airs-ibus"
 	"github.com/untillpro/goutils/logger"
+
+	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
 )
 
 // если одновременно ctx.Done() и SendParallelResponse, то возвращаем канал секций + err = ctx.Err()

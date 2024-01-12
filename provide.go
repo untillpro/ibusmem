@@ -8,10 +8,10 @@ import (
 	"context"
 	"time"
 
-	ibus "github.com/untillpro/airs-ibus"
+	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
 )
 
-// requestCtx is already contained by sender but exposed also as a separate param because it is more useful in request handlers 
+// requestCtx is already contained by sender but exposed also as a separate param because it is more useful in request handlers
 func Provide(requestHandler func(requestCtx context.Context, sender interface{}, request ibus.Request)) ibus.IBus {
 	return provide(requestHandler, time.After, time.After, time.After)
 }

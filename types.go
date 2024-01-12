@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	ibus "github.com/untillpro/airs-ibus"
+	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
 )
 
 type bus struct {

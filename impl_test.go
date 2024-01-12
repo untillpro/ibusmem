@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	ibus "github.com/untillpro/airs-ibus"
+
+	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
 )
 
 func TestBasicUsage(t *testing.T) {
@@ -359,8 +360,8 @@ func TestResultSenderClosable_SendElement(t *testing.T) {
 		// cancel should be synchronzied, otherwise possible at tryToSendElement: write to elements channel, read it here, cancel here,
 		// then return non-nil ctx.Err() from tryToSendElement -> SendElement early failed
 		cancel()
-		ch <- nil           // signal cancelled
-		<-ch                // wait for ok to read next element to force ctx.Done case fire at tryToSendElement
+		ch <- nil              // signal cancelled
+		<-ch                   // wait for ok to read next element to force ctx.Done case fire at tryToSendElement
 		_, _ = array.Next(ctx) // note: element could be sent on ctx.Done() because cases order is undefined at tryToSendElement. But SendElement() will return error in any case
 		_, ok = <-sections
 		require.False(ok)
