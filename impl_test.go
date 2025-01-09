@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
+	ibus "github.com/untillpro/airs-ibus"
 )
 
 func TestBasicUsage(t *testing.T) {

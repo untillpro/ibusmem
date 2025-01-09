@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
+	ibus "github.com/untillpro/airs-ibus"
 )
 
 // BenchmarkSectionedRequestResponse/#00-4    51944	     23527 ns/op	     42505 rps	    4229 B/op	      69 allocs/op

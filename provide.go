@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
+	ibus "github.com/untillpro/airs-ibus"
 )
 
 // requestCtx is already contained by sender but exposed also as a separate param because it is more useful in request handlers

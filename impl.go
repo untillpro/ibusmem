@@ -14,8 +14,7 @@ import (
 	"time"
 
 	"github.com/voedger/voedger/pkg/goutils/logger"
-
-	ibus "github.com/voedger/voedger/staging/src/github.com/untillpro/airs-ibus"
+	"github.com/untillpro/airs-ibus"
 )
 
 // if ctx.Done() and SendParallelResponse simultaneously then return sections channel + err = ctx.Err()
